@@ -1,4 +1,4 @@
- import logging
+import logging
 import os
 import sqlite3
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
@@ -173,4 +173,4 @@ def main():
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    main()     
+    main()
