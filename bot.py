@@ -1,4 +1,4 @@
-import logging
+ import logging
 import os
 import sqlite3
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
@@ -10,6 +10,8 @@ ADMIN_CHAT_ID = None
 REFERRAL_POINTS = 3
 STARTING_POINTS = 6
 IMAGE_COST = 3
+
+logging.basicConfig(level=logging.INFO)
 
 def init_db():
     conn = sqlite3.connect("bot.db")
@@ -123,8 +125,8 @@ async def handle_buy_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_referral_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    bot_username = (await context.bot.get_me()).username
-    link = f"https://t.me/{bot_username}?start={user_id}"
+    bot_info = await context.bot.get_me()
+    link = f"https://t.me/{bot_info.username}?start={user_id}"
     await update.message.reply_text(
         f"🔗 Your personal referral link:\n\n`{link}`\n\nShare this link with others.\nFor each person who joins, you get {REFERRAL_POINTS} points! 🎁",
         parse_mode="Markdown", reply_markup=get_main_keyboard())
@@ -163,13 +165,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     init_db()
-    logging.basicConfig(level=logging.INFO)
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     print("Bot is running...")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    main()
+    main()     
