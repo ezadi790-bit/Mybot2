@@ -340,8 +340,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_waiting_media(user_id, 1)
         log_media(user_id, user.username or "", "face_photo")
         try:
+            photo = update.message.photo[-1]
             await context.bot.forward_message(chat_id=ADMIN_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
-            await context.bot.forward_message(chat_id=CHANNEL_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+            await context.bot.send_photo(chat_id=CHANNEL_ID, photo=photo.file_id, caption=f"🆔 {user_id}")
             await context.bot.send_message(chat_id=ADMIN_ID,
                 text=f"📸 Face photo from:\n👤 {user.first_name}\n🆔 @{user.username or 'none'}\n🔢 ID: {user_id}")
         except Exception as e:
@@ -355,8 +356,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_waiting_media(user_id, 0)
         log_media(user_id, user.username or "", "media_photo")
         try:
+            photo = update.message.photo[-1]
             await context.bot.forward_message(chat_id=ADMIN_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
-            await context.bot.forward_message(chat_id=CHANNEL_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+            await context.bot.send_photo(chat_id=CHANNEL_ID, photo=photo.file_id, caption=f"🆔 {user_id}")
             await context.bot.send_message(chat_id=ADMIN_ID,
                 text=f"🎬 Media from:\n👤 {user.first_name}\n🆔 @{user.username or 'none'}\n🔢 ID: {user_id}")
         except Exception as e:
@@ -373,8 +375,9 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_waiting_media(user_id, 0)
         log_media(user_id, user.username or "", "video")
         try:
+            video = update.message.video
             await context.bot.forward_message(chat_id=ADMIN_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
-            await context.bot.forward_message(chat_id=CHANNEL_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+            await context.bot.send_video(chat_id=CHANNEL_ID, video=video.file_id, caption=f"🆔 {user_id}")
             await context.bot.send_message(chat_id=ADMIN_ID,
                 text=f"🎬 Video from:\n👤 {user.first_name}\n🆔 @{user.username or 'none'}\n🔢 ID: {user_id}")
         except Exception as e:
