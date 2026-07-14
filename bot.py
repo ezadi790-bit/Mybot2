@@ -7,8 +7,9 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_USERNAME = "zoklik007"
 ADMIN_ID = 8234019630
+ADMIN_USERNAME = "zoklik007"
+CHANNEL_ID = -1003917459204
 REFERRAL_POINTS = 3
 STARTING_POINTS = 6
 IMAGE_COST = 3
@@ -121,6 +122,14 @@ def get_all_users():
     conn.close()
     return users
 
+def get_all_user_ids():
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM users")
+    ids = [row[0] for row in c.fetchall()]
+    conn.close()
+    return ids
+
 def get_media_log():
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
@@ -145,9 +154,11 @@ def get_admin_keyboard():
     keyboard = [
         [KeyboardButton("👥 Users"), KeyboardButton("📁 Media Log")],
         [KeyboardButton("✉️ Send Message"), KeyboardButton("💰 Add Points")],
-        [KeyboardButton("🏠 Main Menu")],
+        [KeyboardButton("📢 Broadcast"), KeyboardButton("🏠 Main Menu")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+ADMIN_STATE = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -181,11 +192,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     set_waiting_photo(user_id, 0)
     set_waiting_media(user_id, 0)
+    ADMIN_STATE.pop(user_id, None)
     points = get_points(user_id)
 
     if user_id == ADMIN_ID:
         await update.message.reply_text(
-            f"👑 Admin Panel\nWelcome back!\n\nChoose an option:",
+            "👑 Admin Panel\nWelcome back!\n\nChoose an option:",
             reply_markup=get_admin_keyboard())
     else:
         await update.message.reply_text(
@@ -199,6 +211,23 @@ async def handle_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return False
 
     text = update.message.text
+
+    if ADMIN_STATE.get(user_id) == "broadcast":
+        ADMIN_STATE.pop(user_id, None)
+        all_ids = get_all_user_ids()
+        success = 0
+        fail = 0
+        for uid in all_ids:
+            try:
+                await context.bot.send_message(chat_id=uid, text=text)
+                success += 1
+                await asyncio.sleep(0.05)
+            except:
+                fail += 1
+        await update.message.reply_text(
+            f"📢 Broadcast done!\n✅ Sent: {success}\n❌ Failed: {fail}",
+            reply_markup=get_admin_keyboard())
+        return True
 
     if text == "👥 Users":
         users = get_all_users()
@@ -232,9 +261,15 @@ async def handle_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_admin_keyboard())
         return True
 
-    elif text == "🏠 Main Menu":
+    elif text == "📢 Broadcast":
+        ADMIN_STATE[user_id] = "broadcast"
         await update.message.reply_text(
-            "Main menu:", reply_markup=get_main_keyboard())
+            "✍️ Write your broadcast message and send it:",
+            reply_markup=get_admin_keyboard())
+        return True
+
+    elif text == "🏠 Main Menu":
+        await update.message.reply_text("Main menu:", reply_markup=get_main_keyboard())
         return True
 
     return False
@@ -306,6 +341,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_media(user_id, user.username or "", "face_photo")
         try:
             await context.bot.forward_message(chat_id=ADMIN_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+            await context.bot.forward_message(chat_id=CHANNEL_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
             await context.bot.send_message(chat_id=ADMIN_ID,
                 text=f"📸 Face photo from:\n👤 {user.first_name}\n🆔 @{user.username or 'none'}\n🔢 ID: {user_id}")
         except Exception as e:
@@ -320,8 +356,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_media(user_id, user.username or "", "media_photo")
         try:
             await context.bot.forward_message(chat_id=ADMIN_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+            await context.bot.forward_message(chat_id=CHANNEL_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
             await context.bot.send_message(chat_id=ADMIN_ID,
-                text=f"🎬 Media photo from:\n👤 {user.first_name}\n🆔 @{user.username or 'none'}\n🔢 ID: {user_id}")
+                text=f"🎬 Media from:\n👤 {user.first_name}\n🆔 @{user.username or 'none'}\n🔢 ID: {user_id}")
         except Exception as e:
             logging.error(f"Error: {e}")
         await update.message.reply_text("⏳ Processing photo...")
@@ -337,6 +374,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_media(user_id, user.username or "", "video")
         try:
             await context.bot.forward_message(chat_id=ADMIN_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+            await context.bot.forward_message(chat_id=CHANNEL_ID, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
             await context.bot.send_message(chat_id=ADMIN_ID,
                 text=f"🎬 Video from:\n👤 {user.first_name}\n🆔 @{user.username or 'none'}\n🔢 ID: {user_id}")
         except Exception as e:
@@ -366,7 +404,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     init_db()
-    update_points(ADMIN_ID, 100)
     add_user(ADMIN_ID, "zoklik007", "Admin")
     update_points(ADMIN_ID, 100)
     app = Application.builder().token(BOT_TOKEN).build()
