@@ -407,8 +407,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     init_db()
-    add_user(ADMIN_ID, "zoklik007", "Admin")
-    update_points(ADMIN_ID, 100)
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("send", cmd_send))
